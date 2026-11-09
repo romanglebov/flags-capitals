@@ -1,0 +1,11 @@
+{
+  "name": "Столицы и флаги",
+  "short_name": "Флаги",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EAF0EE",
+  "theme_color": "#1C6E9E",
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+}
