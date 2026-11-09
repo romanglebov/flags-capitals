@@ -71,6 +71,8 @@ main{max-width:620px;margin:0 auto;padding-block:20px 80px;
 
 /* day card */
 .day{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;grid-template-columns:1fr auto;gap:12px 16px;align-items:center}
+.sync p{overflow-wrap:anywhere}
+@media (max-width:480px){.sync{grid-template-columns:1fr}.sync .btn{width:100%}}
 .day h2{margin:0;font-family:var(--display);font-size:15px;font-weight:700}
 .day p{margin:2px 0 0;color:var(--muted);font-size:14px}
 .bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden;grid-column:1/-1}
@@ -243,6 +245,11 @@ dialog.mbox::backdrop{background:rgba(5,15,20,.55)}
     <div><h2 id="dayTitle">Цель дня</h2><p id="dayText"></p></div>
     <button class="btn ghost" id="reviewBtn">Работа над ошибками</button>
     <div class="bar"><i id="dayBar"></i></div>
+  </section>
+  <section class="day sync" id="sync" aria-label="Синхронизация" hidden>
+    <div><h2>Прогресс на всех устройствах</h2><p id="syncText">Войдите через Google, и прогресс будет общим на телефоне и компьютере.</p></div>
+    <button class="btn" id="syncIn">Войти через Google</button>
+    <button class="btn ghost" id="syncOut" hidden>Выйти</button>
   </section>
   <div id="units"></div>
   <details class="ref"><summary>Справочник: все страны и столицы</summary><div id="refList"></div></details>
@@ -480,10 +487,28 @@ const R=Object.fromEntries(REGIONS.map(r=>[r.id,r]));
 
 /* ---------- state ---------- */
 const KEY='flags-capitals-v1', MAXH=5, HEART_MS=20*60*1000, GOAL=30;
-const fresh=()=>({xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{}});
+const fresh=()=>({epoch:0,ts:0,xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{}});
 let S=fresh();
 try{const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(fresh(),JSON.parse(raw));}catch(e){}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}};
+const save=()=>{S.ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){} window.syncPush&&window.syncPush();};
+/* merge two progress states (local + cloud) without losing anything */
+const dayNum=s=>{if(!s)return 0;const[y,mo,d]=s.split('-').map(Number);return y*10000+mo*100+d;};
+function mergeStates(a,b){
+  a=Object.assign(fresh(),a); b=Object.assign(fresh(),b);
+  if((a.epoch||0)!==(b.epoch||0)) return (a.epoch||0)>(b.epoch||0)?a:b;
+  const newer=(a.ts||0)>=(b.ts||0)?a:b, m=fresh();
+  m.epoch=a.epoch||0; m.ts=Math.max(a.ts||0,b.ts||0);
+  m.xp=Math.max(a.xp,b.xp);
+  m.hearts=newer.hearts; m.heartTs=newer.heartTs;
+  const la=dayNum(a.lastDay), lb=dayNum(b.lastDay);
+  if(la!==lb){const w=la>lb?a:b; m.lastDay=w.lastDay; m.streak=w.streak;} else {m.lastDay=a.lastDay; m.streak=Math.max(a.streak,b.streak);}
+  const da=dayNum(a.dayKey), db=dayNum(b.dayKey);
+  if(da!==db){const w=da>db?a:b; m.dayKey=w.dayKey; m.dayXp=w.dayXp;} else {m.dayKey=a.dayKey; m.dayXp=Math.max(a.dayXp,b.dayXp);}
+  const maxMap=(x,y)=>{const o=Object.assign({},x);for(const k in y)o[k]=Math.max(o[k]||0,y[k]||0);return o;};
+  m.done=maxMap(a.done,b.done); m.m=maxMap(a.m,b.m);
+  m.finals=Object.assign({},a.finals,b.finals); m.seen=Object.assign({},a.seen,b.seen);
+  return m;
+}
 const dk=(d=new Date())=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
 const yk=()=>{const d=new Date();d.setDate(d.getDate()-1);return dk(d);};
 function refill(){
@@ -789,10 +814,15 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Enter' && !$('#act').disabled && document.activeElement!==$('#act')){ e.preventDefault(); $('#act').click(); }
 });
 $('#reviewBtn').onclick=startReview;
-$('#resetBtn').onclick=()=>modal('<h3>Сбросить прогресс?</h3><p>Опыт, серия и пройденные уроки будут удалены.</p>',[['Отмена','',null],['Сбросить','ghost',()=>{S=fresh();save();renderHome();}]]);
+$('#resetBtn').onclick=()=>modal('<h3>Сбросить прогресс?</h3><p>Опыт, серия и пройденные уроки будут удалены.</p>',[['Отмена','',null],['Сбросить','ghost',()=>{S=Object.assign(fresh(),{epoch:(S.epoch||0)+1});save();renderHome();}]]);
 renderHome();
 setInterval(renderStats,60000);
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
 </script>
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="sync.js"></script>
 </body>
 </html>
