@@ -104,22 +104,35 @@ main{max-width:620px;margin:0 auto;padding-block:20px 80px;
 .tab[aria-selected="true"] small{color:inherit;opacity:.85}
 #dueText{color:var(--sea);font-weight:600}
 #dueText:empty{display:none}
-.lvhead{display:flex;align-items:center;gap:10px;margin-top:18px;padding:0 4px;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--u)}
+.lvhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:18px;padding:0 4px;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--u)}
 .lvhead::after{content:"";flex:1;height:2px;background:var(--line);order:3}
 .lvhead em{font-style:normal;text-transform:none;letter-spacing:0;color:var(--good);font-size:13px;order:4}
 .lvhead.locked{color:var(--muted)}
-.lvhead.locked,.lvhead.passed{margin-top:6px;padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
-.lvhead.locked::after,.lvhead.passed::after{display:none}
-.lvhead.passed{cursor:pointer}
-.lvhead.passed em{margin-left:auto}
-.lvhead .again{order:5;text-transform:none;letter-spacing:0;font-size:13px;color:var(--sea)}
-.lvhead.passed:hover{border-color:var(--u)}
 .lvflags{display:flex;gap:4px;font-size:18px;order:2}
 .lvhead>span:first-child{white-space:nowrap}
 .lvhead.passed em{white-space:nowrap}
 @media (max-width:400px){.lvhead.passed em{display:none}}
 .fl.q{background:var(--line);box-shadow:none}
 .node.rev{border-radius:22px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:center;font-size:13px;color:var(--muted);font-weight:600}
+.legend span{display:flex;align-items:center;gap:6px}
+.lg{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--sea);color:var(--paper)}
+.lg svg{width:15px;height:15px}
+.lg.exam{border-radius:8px}
+.seg{display:flex;flex-direction:column}
+.seg .lvhead{margin-top:10px}
+.cpill{background:var(--u);color:var(--paper);border-radius:99px;padding:3px 10px;font-size:11px;letter-spacing:.06em;white-space:nowrap}
+.lvt{white-space:nowrap}
+.lvhead em{font-style:normal;color:var(--good);font-size:15px}
+.lvhead.locked .lvflags{opacity:.55}
+.node{position:absolute}
+.node .nb{position:absolute;right:-4px;top:-4px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--bg)}
+.node .nb svg{width:13px;height:13px}
+.node .nb.ok{background:var(--good);color:#fff}
+.node .nb.lk{background:var(--muted);color:var(--bg)}
+.node.locked svg:first-child{opacity:.75}
+.node.cat-exam{border-radius:20px}
+.node.cat-rev{border-radius:22px}
 .route svg.path{position:absolute;left:50%;top:0;width:1px;overflow:visible;pointer-events:none}
 .route svg.path path{fill:none;stroke:var(--line);stroke-width:4;stroke-dasharray:2 10;stroke-linecap:round}
 .route svg.path path.walked{stroke:var(--u)}
@@ -276,7 +289,6 @@ dialog.mbox::backdrop{background:rgba(5,15,20,.55)}
     <button class="btn" id="syncIn">Войти через Google</button>
     <button class="btn ghost" id="syncOut" hidden>Выйти</button>
   </section>
-  <div class="tabs" id="tabs" role="tablist" aria-label="Континенты"></div>
   <div id="units"></div>
   <details class="ref"><summary>Справочник: все страны и столицы</summary><div id="refList"></div></details>
   <p class="foot">Прогресс хранится в этом браузере. Клавиши 1–4 выбирают ответ, Enter — проверить. Флаги: flag-icons (MIT). <button class="linkbtn" id="resetBtn">Сбросить прогресс</button></p>
@@ -525,10 +537,31 @@ REGIONS.forEach(r=>{
   r.nodes.push({k:'final',lv:r.levels.length,codes:r.codes,title:'Испытание'});
 });
 const R=Object.fromEntries(REGIONS.map(r=>[r.id,r]));
+/* one path through all continents: level 1 of each continent, then level 2 of each, ... */
+const CAT={flagsA:'new',flagsB:'new',caps:'new',flagsAll:'fix',mix:'fix',review:'rev',final:'exam'};
+const SEQ=[];
+(function(){
+  const maxLv=Math.max(...REGIONS.map(r=>r.levels.length)), learned=[]; let lvCount=0;
+  const add=n=>{n.gi=SEQ.length;n.cat=CAT[n.k];SEQ.push(n);};
+  for(let k=0;k<maxLv;k++) for(const r of REGIONS){
+    if(k>=r.levels.length) continue;
+    const g=r.levels[k], half=Math.ceil(g.length/2), A=g.slice(0,half), B=g.slice(half), before=learned.slice();
+    const seg={type:'level',rid:r.id,lv:k,codes:g};
+    const mk=(kind,codes,title,extra)=>add(Object.assign({id:`${r.id}-${k}-${kind}`,k:kind,rid:r.id,lv:k,codes,title,before,seg},extra||{}));
+    mk('flagsA',A,'Новые флаги');
+    if(B.length) mk('flagsB',B,'Новые флаги',{prev:A});
+    mk('flagsAll',g,'Закрепление флагов');
+    mk('caps',g,'Новые столицы');
+    mk('mix',g,'Закрепление уровня');
+    learned.push(...g); lvCount++;
+    if(lvCount%2===0) add({id:'rev-'+lvCount,k:'review',codes:learned.slice(),before:learned.slice(),title:'Повторение',seg:{type:'review'}});
+    if(k===r.levels.length-1) add({id:'exam-'+r.id,k:'final',rid:r.id,codes:r.codes,before:learned.slice(),title:'Экзамен',seg:{type:'exam',rid:r.id}});
+  }
+})();
 
 /* ---------- state ---------- */
 const KEY='flags-capitals-v1', MAXH=5, HEART_MS=20*60*1000, GOAL=30;
-const fresh=()=>({epoch:0,ts:0,xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{},prog:{},due:{},capSeen:{}});
+const fresh=()=>({epoch:0,ts:0,xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{},prog:{},due:{},capSeen:{},ndone:{}});
 let S=fresh();
 try{const raw=localStorage.getItem(KEY); if(raw) S=migrate(Object.assign(fresh(),JSON.parse(raw)));}catch(e){}
 function migrate(st){
@@ -543,6 +576,15 @@ function migrate(st){
     });
     for(const c in st.seen) st.capSeen[c]=1; // old intros showed the capital too
     st.migrated2=1;
+  }
+  if(!st.migrated3){ // per-continent progress -> nodes of the shared path
+    st.ndone=st.ndone||{};
+    REGIONS.forEach(r=>{
+      const pr=st.prog&&st.prog[r.id]||0;
+      r.nodes.slice(0,pr).forEach(n=>{ if(n.k!=='review'&&n.k!=='final') st.ndone[`${r.id}-${n.lv}-${n.k}`]=1; });
+      if(st.finals&&st.finals[r.id]) st.ndone['exam-'+r.id]=1;
+    });
+    st.migrated3=1;
   }
   return st;
 }
@@ -562,7 +604,8 @@ function mergeStates(a,b){
   if(da!==db){const w=da>db?a:b; m.dayKey=w.dayKey; m.dayXp=w.dayXp;} else {m.dayKey=a.dayKey; m.dayXp=Math.max(a.dayXp,b.dayXp);}
   const maxMap=(x,y)=>{const o=Object.assign({},x);for(const k in y)o[k]=Math.max(o[k]||0,y[k]||0);return o;};
   m.done=maxMap(a.done,b.done); m.m=maxMap(a.m,b.m); m.prog=maxMap(a.prog,b.prog);
-  m.capSeen=Object.assign({},a.capSeen,b.capSeen); m.migrated2=1;
+  m.capSeen=Object.assign({},a.capSeen,b.capSeen); m.migrated2=1; m.migrated3=1;
+  m.ndone=Object.assign({},a.ndone,b.ndone);
   const older=newer===a?b:a; m.due=Object.assign({},older.due,newer.due);
   m.finals=Object.assign({},a.finals,b.finals); m.seen=Object.assign({},a.seen,b.seen);
   return m;
@@ -641,71 +684,60 @@ const ICON_PIN='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 
 const ICON_STAR='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21l1.4-7L2 9.3l7-.8z"/></svg>';
 const ICON_LOOP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></svg>';
 const NODE_ICON={flagsA:ICON_FLAG,flagsB:ICON_FLAG,flagsAll:ICON_STAR,caps:ICON_PIN,mix:ICON_STAR,review:ICON_LOOP,final:ICON_CUP};
-let TAB=null; try{TAB=localStorage.getItem('fc-tab');}catch(e){}
-function regionProg(r){return Math.min(S.prog[r.id]||0,r.nodes.length);}
-function renderTabs(){
-  if(!R[TAB]) TAB=(REGIONS.find(r=>regionProg(r)>0&&regionProg(r)<r.nodes.length)||REGIONS[0]).id;
-  $('#tabs').innerHTML=REGIONS.map(r=>{const lvDone=r.nodes.slice(0,regionProg(r)).filter(n=>n.k==='mix').length;
-    return `<button role="tab" class="tab" aria-selected="${r.id===TAB}" style="--u:${r.color}" data-id="${r.id}"><b>${r.name}</b><small>${lvDone}/${r.levels.length}</small></button>`;}).join('');
-  $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{TAB=b.dataset.id;try{localStorage.setItem('fc-tab',TAB);}catch(e){}renderHome();});
-}
+const ICON_NEW='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 5.5c3.2-1.2 6.4-1 9.5 1 3.1-2 6.3-2.2 9.5-1v13c-3.2-1.2-6.4-1-9.5 1-3.1-2-6.3-2.2-9.5-1z"/><path d="M12 6.5v13"/></svg>';
+const ICON_FIX='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="1.5" y="9.5" width="3" height="5" rx="1"/><rect x="19.5" y="9.5" width="3" height="5" rx="1"/><rect x="4.5" y="6" width="3.5" height="12" rx="1.2"/><rect x="16" y="6" width="3.5" height="12" rx="1.2"/><rect x="8" y="10.8" width="8" height="2.4"/></svg>';
+const ICON_EXAM='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3L1 9l11 6 8-4.4V17h2V9z"/><path d="M5.5 13.2V17c1.8 1.9 4 2.9 6.5 2.9s4.7-1 6.5-2.9v-3.8L12 16.8z"/></svg>';
+const CAT_ICON={new:ICON_NEW,fix:ICON_FIX,rev:ICON_LOOP,exam:ICON_EXAM};
+const CAT_NAME={new:'Новое',fix:'Закрепление',rev:'Повторение',exam:'Экзамен'};
+let scrollToCurrent=true;
 function renderHome(){
-  renderStats(); renderTabs();
+  renderStats();
   const due=dueList().length, rb=$('#reviewBtn');
   rb.textContent=due?`Повторить · ${due}`:'Повторить';
   $('#dueText').textContent=due?`${due} ${plural(due,'страна ждёт','страны ждут','стран ждут')} повторения`:(Object.keys(S.seen).length?'На сегодня всё повторено':'');
   const host=$('#units'); host.innerHTML='';
-  const r=R[TAB], prog=regionProg(r), N=r.nodes.length, finalDone=!!S.finals[r.id];
-  const lvNow=Math.min(r.levels.length, (r.nodes[Math.min(prog,N-1)]||{}).lv+1);
-  const unit=document.createElement('section'); unit.className='unit'; unit.style.setProperty('--u',r.color);
-  unit.innerHTML=`<div class="uhead"><div class="t"><small>${r.codes.length} ${plural(r.codes.length,'страна','страны','стран')} · ${r.levels.length} ${plural(r.levels.length,'уровень','уровня','уровней')}</small><h3>${r.name}</h3>
-    <div class="meta">${finalDone?'Испытание пройдено':prog>=N-1?'Осталось испытание':`Уровень ${lvNow} из ${r.levels.length}`}</div></div></div>`;
-  const GAP=92, TOP=70;
-  let gi=0; // global node index for the winding offset
-  const groups=[]; r.levels.forEach((g,lv)=>groups.push({lv,nodes:r.nodes.map((n,i)=>({n,i})).filter(o=>o.n.lv===lv)}));
-  groups.push({lv:r.levels.length,nodes:[{n:r.nodes[N-1],i:N-1}]});
+  const isDone=n=>!!S.ndone[n.id];
+  const unlocked=i=>i===0||isDone(SEQ[i])||isDone(SEQ[i-1]);
+  const cur=SEQ.findIndex(n=>!isDone(n));
+  const lvAll=SEQ.filter(n=>n.k==='mix').length, lvDone=SEQ.filter(n=>n.k==='mix'&&isDone(n)).length;
+  const curN=SEQ[cur];
+  host.insertAdjacentHTML('beforeend',`<div class="uhead" style="--u:var(--sea)"><div class="t"><small>194 страны · ${lvAll} уровней · 5 континентов</small><h3>Путь по миру</h3>
+    <div class="meta">${cur<0?'Весь путь пройден!':`Пройдено уровней: ${lvDone} из ${lvAll}. Сейчас: ${curN.seg.type==='level'?R[curN.rid].name+', уровень '+(curN.lv+1):curN.seg.type==='exam'?'экзамен, '+R[curN.rid].name:'повторение'}`}</div></div></div>
+    <div class="legend">${Object.keys(CAT_ICON).map(k=>`<span><i class="lg ${k}">${CAT_ICON[k]}</i>${CAT_NAME[k]}</span>`).join('')}</div>`);
+  // group consecutive nodes of one segment
+  const groups=[]; SEQ.forEach(n=>{const g=groups[groups.length-1]; if(g&&g.seg===n.seg) g.nodes.push(n); else groups.push({seg:n.seg,nodes:[n]});});
+  const GAP=92, TOP=74; let gi=0, curEl=null;
   groups.forEach(G=>{
-    const isFinalG=G.lv===r.levels.length, first=G.nodes[0].i, last=G.nodes[G.nodes.length-1].i;
-    const open=prog>=first, doneAll=prog>last;
-    const head=document.createElement('div'); head.className='lvhead'+(open?'':' locked');
-    const codes=isFinalG?[]:r.levels[G.lv];
-    head.innerHTML=isFinalG?`<span>Испытание: все страны континента</span>`:
-      `<span>Уровень ${G.lv+1}</span><span class="lvflags">${open?codes.map(c=>C[c].flag).join(''):codes.map(()=>'<i class="fl q"></i>').join('')}</span>${doneAll?'<em>пройден</em>':''}`;
-    if(isFinalG&&finalDone) head.innerHTML='<span>Испытание</span><em>пройдено</em>';
-    unit.appendChild(head);
-    const isCur=open&&!doneAll&&!(isFinalG&&finalDone);
-    if(!isCur){
-      if(doneAll||(isFinalG&&finalDone)){ // finished level: compact row, tap to practise it again
-        const ni=isFinalG?N-1:G.nodes.find(o=>o.n.k==='mix').i;
-        head.classList.add('passed'); head.tabIndex=0; head.setAttribute('role','button');
-        head.insertAdjacentHTML('beforeend','<b class="again">Повторить</b>');
-        head.onclick=()=>startNode(r.id,ni); head.onkeydown=e=>{if(e.key==='Enter')startNode(r.id,ni);};
-      }
-      return;
-    }
-    const n=G.nodes.length, H=TOP+(n-1)*GAP+50;
+    const sg=G.seg, color=sg.type==='review'?'var(--sea)':R[sg.rid].color;
+    const sec=document.createElement('section'); sec.className='seg '+sg.type; sec.style.setProperty('--u',color);
+    const open=unlocked(G.nodes[0].gi), allDone=G.nodes.every(isDone);
+    let head;
+    if(sg.type==='level') head=`<span class="cpill">${R[sg.rid].name}</span><span class="lvt">Уровень ${sg.lv+1}</span><span class="lvflags">${sg.codes.map(c=>C[c].flag).join('')}</span>`;
+    else if(sg.type==='exam') head=`<span class="cpill">${R[sg.rid].name}</span><span class="lvt">Экзамен по континенту</span>`;
+    else head=`<span class="lvt">Повторение пройденного</span>`;
+    sec.innerHTML=`<div class="lvhead${open?'':' locked'}">${head}${allDone?'<em>✓</em>':''}</div>`;
+    const n=G.nodes.length, H=TOP+(n-1)*GAP+52;
     const route=document.createElement('div'); route.className='route'; route.style.height=H+'px';
-    const pts=G.nodes.map((o,k)=>[Math.round(Math.sin((gi+k)*1.15)*78),TOP-24+k*GAP]);
+    const pts=G.nodes.map((o,k)=>[Math.round(Math.sin((gi+k)*1.15)*78),TOP+k*GAP]);
     const seg=(a,b)=>`C ${a[0]} ${a[1]+GAP/2} ${b[0]} ${b[1]-GAP/2} ${b[0]} ${b[1]}`;
     let d=`M ${pts[0][0]} ${pts[0][1]}`, dw=d, walked=0;
-    for(let k=1;k<n;k++){d+=' '+seg(pts[k-1],pts[k]); if(G.nodes[k].i<=prog){dw+=' '+seg(pts[k-1],pts[k]);walked++;}}
-    route.innerHTML=`<svg class="path" height="${H}" aria-hidden="true"><path d="${d}"/>${walked?`<path class="walked" d="${dw}"/>`:''}</svg>`;
-    G.nodes.forEach((o,k)=>{
-      const nd=o.n, i=o.i, isFinal=nd.k==='final';
-      const unlocked=i<=prog, isDone=isFinal?finalDone:i<prog, current=unlocked&&!isDone;
+    for(let k=1;k<n;k++){d+=' '+seg(pts[k-1],pts[k]); if(isDone(G.nodes[k-1])){dw+=' '+seg(pts[k-1],pts[k]);walked++;}}
+    route.innerHTML=n>1?`<svg class="path" height="${H}" aria-hidden="true"><path d="${d}"/>${walked?`<path class="walked" d="${dw}"/>`:''}</svg>`:'';
+    G.nodes.forEach((nd,k)=>{
+      const i=nd.gi, un=unlocked(i), dn=isDone(nd), current=i===cur;
       const b=document.createElement('button');
-      b.className='node'+(isFinal?' final':'')+(nd.k==='review'?' rev':'')+(unlocked?'':' locked')+(isDone?' done':'')+(current?' current':'');
+      b.className='node cat-'+nd.cat+(un?'':' locked')+(dn?' done':'')+(current?' current':'');
       b.style.left=`calc(50% + ${pts[k][0]}px)`; b.style.top=pts[k][1]+'px';
-      b.innerHTML=!unlocked?ICON_LOCK:isDone?ICON_CHECK:NODE_ICON[nd.k];
-      const what=isFinal?'все страны':nd.k==='review'?'всё пройденное':nd.codes.map(c=>C[c].name).join(', ');
-      b.setAttribute('aria-label',`${nd.title}: ${unlocked?what:'закрыто'}`); b.title=`${nd.title}${unlocked?': '+what:''}`;
-      b.onclick=()=>{ if(!unlocked){toast('Сначала пройдите предыдущие шаги');return;} startNode(r.id,i); };
+      b.innerHTML=CAT_ICON[nd.cat]+(dn?`<span class="nb ok">${ICON_CHECK}</span>`:un?'':`<span class="nb lk">${ICON_LOCK}</span>`);
+      const what=nd.k==='final'?'все страны континента':nd.k==='review'?'всё пройденное':nd.codes.map(c=>C[c].name).join(', ');
+      b.setAttribute('aria-label',`${nd.title}: ${what}${dn?' (пройдено)':un?'':' (закрыто)'}`); b.title=`${nd.title}: ${what}`;
+      b.onclick=()=>{ if(!un){toast('Сначала пройдите предыдущие шаги');return;} startNode(i); };
       route.appendChild(b);
-      if(current){const t=document.createElement('div');t.className='tag';t.style.left=b.style.left;t.style.top=pts[k][1]+'px';t.textContent=nd.title;route.appendChild(t);}
+      if(current){curEl=b;const t=document.createElement('div');t.className='tag';t.style.left=b.style.left;t.style.top=pts[k][1]+'px';t.textContent=nd.title;route.appendChild(t);}
     });
-    gi+=n; unit.appendChild(route);
+    gi+=n; sec.appendChild(route); host.appendChild(sec);
   });
-  host.appendChild(unit);
+  if(scrollToCurrent&&curEl){scrollToCurrent=false; requestAnimationFrame(()=>curEl.scrollIntoView({block:'center',behavior:'instant'}));}
   // reference
   $('#refList').innerHTML=REGIONS.map(r=>`<h4>${r.name}</h4><ul>${r.codes.map(c=>{const x=C[c],m=mastery(c);
     return `<li><span class="flag">${x.flag}</span><div class="txt"><span class="n">${esc(x.name)}</span><br><span class="c">${esc(x.cap)}</span></div><div class="dots" title="Освоение: ${m} из 5">${[0,1,2,3,4].map(k=>`<i class="${k<m?'on':''}"></i>`).join('')}</div></li>`}).join('')}</ul>`).join('');
@@ -749,8 +781,8 @@ function spread(steps){
 const flagQ=c=>({t:pick(['f2c','c2f']),c});
 const anyQ=c=>({t:pick(typesFor(c)),c});
 // countries from earlier levels to mix in: due first, then weakest
-function earlierPick(r,lv,n){
-  const t=today(); const pool=r.levels.slice(0,lv).flat().filter(known);
+function earlierPick(nd,n){
+  const t=today(); const pool=(nd.before||[]).filter(known);
   return pool.sort((a,b)=>((S.due[a]??0)<=t?0:1)-((S.due[b]??0)<=t?0:1)||mastery(a)-mastery(b)||Math.random()-.5).slice(0,n);
 }
 function buildNode(r,nd){
@@ -761,15 +793,15 @@ function buildNode(r,nd){
     const rest=[];
     g.forEach(c=>{rest.push({t:'c2f',c},{t:'f2c',c},{t:'c2f',c});});
     (nd.prev||[]).forEach(c=>rest.push(flagQ(c),flagQ(c)));
-    earlierPick(r,nd.lv,2).forEach(c=>rest.push(anyQ(c)));
+    earlierPick(nd,2).forEach(c=>rest.push(anyQ(c)));
     const out=spread(rest);
-    const mset=g.concat(nd.prev||[],earlierPick(r,nd.lv,4)).slice(0,4);
+    const mset=g.concat(nd.prev||[],earlierPick(nd,4)).slice(0,4);
     if(mset.length>=3) out.splice(Math.floor(out.length*0.6),0,{t:'match',mode:'flag',codes:mset});
     return steps.concat(out);
   }
   if(nd.k==='flagsAll'){
     const rest=[]; g.forEach(c=>rest.push({t:'f2c',c},{t:'c2f',c},flagQ(c)));
-    earlierPick(r,nd.lv,2).forEach(c=>rest.push(anyQ(c)));
+    earlierPick(nd,2).forEach(c=>rest.push(anyQ(c)));
     const out=spread(rest); out.splice(Math.floor(out.length/2),0,{t:'match',mode:'flag',codes:shuffle(g).slice(0,4)});
     return out;
   }
@@ -781,7 +813,7 @@ function buildNode(r,nd){
   }
   if(nd.k==='mix'){
     const rest=[]; g.forEach(c=>rest.push({t:pick(['f2c','c2f']),c},{t:pick(['c2cap','cap2c']),c}));
-    const ear=earlierPick(r,nd.lv,4); ear.forEach(c=>rest.push(anyQ(c)));
+    const ear=earlierPick(nd,4); ear.forEach(c=>rest.push(anyQ(c)));
     const out=spread(rest);
     const mset=shuffle(g).slice(0,Math.min(4,g.length));
     if(mset.length>=3) out.splice(Math.floor(out.length/2),0,{t:'match',mode:pick(['flag','cap']),codes:mset});
@@ -789,20 +821,22 @@ function buildNode(r,nd){
     return out;
   }
   // review over everything learned so far / final test
-  return reviewSteps(nd.codes.filter(known), nd.k==='final'?15:12);
+  return reviewSteps(nd.codes.filter(known), nd.k==='final'?16:14);
 }
 function reviewSteps(pool,n){
   const t=today();
   const cs=pool.slice().sort((a,b)=>((S.due[a]??0)<=t?0:1)-((S.due[b]??0)<=t?0:1)||mastery(a)-mastery(b)||Math.random()-.5).slice(0,n);
-  const out=spread(cs.map((c,k)=>S.capSeen[c]&&k%4===3?{t:'type',c}:anyQ(c)));
+  const qs=cs.map((c,k)=>S.capSeen[c]&&k%4===3?{t:'type',c}:anyQ(c));
+  for(let k=0;qs.length<n&&cs.length;k++) qs.push(anyQ(cs[k%cs.length])); // few countries yet: ask each one more than once
+  const out=spread(qs);
   const mcap=cs.filter(c=>S.capSeen[c]);
   if(cs.length>=4) out.splice(Math.floor(out.length/2),0,mcap.length>=4&&Math.random()<.5?{t:'match',mode:'cap',codes:shuffle(mcap).slice(0,4)}:{t:'match',mode:'flag',codes:shuffle(cs).slice(0,4)});
   return out;
 }
 function canPlay(){refill(); if(S.hearts<=0){noHearts();return false;} return true;}
-function startNode(rid,i){
-  if(!canPlay())return; const r=R[rid], nd=r.nodes[i];
-  run({kind:nd.k==='final'?'final':'lesson',rid,ni:i,node:nd,steps:buildNode(r,nd)});
+function startNode(i){
+  if(!canPlay())return; const nd=SEQ[i];
+  run({kind:nd.k==='final'?'final':'lesson',rid:nd.rid,node:nd,steps:buildNode(R[nd.rid],nd)});
 }
 function startReview(){
   let pool=dueList();
@@ -928,7 +962,7 @@ function renderMatch(h){
     t.classList.add('sel'); tryPair();
   });
 }
-function closeLesson(){ L=null; $('#lesson').hidden=true; document.body.style.overflow=''; renderHome(); }
+function closeLesson(){ scrollToCurrent=true; L=null; $('#lesson').hidden=true; document.body.style.overflow=''; renderHome(); }
 function award(xp){
   const today=dk();
   if(S.dayKey!==today){S.dayKey=today;S.dayXp=0;}
@@ -939,14 +973,14 @@ function finish(){
   const secs=Math.round((Date.now()-L.start)/1000), acc=L.answers?Math.round((L.answers-L.mistakes)/L.answers*100):100;
   let xp=L.kind==='final'?25:L.kind==='review'?10:10; if(L.mistakes===0&&L.kind!=='review') xp+=5;
   let title='Урок пройден!', sub='';
-  if(L.kind==='lesson'||L.kind==='final'){ if((S.prog[L.rid]||0)===L.ni) S.prog[L.rid]=L.ni+1; }
+  if(L.kind==='lesson'||L.kind==='final'){ S.ndone[L.node.id]=1; }
   if(L.kind==='lesson'){ const nd=L.node, fl=nd.codes.map(c=>C[c].flag).join(' ');
     const T={flagsA:['Новые флаги выучены',`Теперь вы знаете: ${fl}`],flagsB:['Новые флаги выучены',`Теперь вы знаете: ${fl}`],
-      flagsAll:['Флаги закреплены',`Уровень ${nd.lv+1}: ${fl}. Дальше столицы.`],caps:['Столицы выучены',`Столицы стран: ${fl}`],
-      mix:[`Уровень ${nd.lv+1} пройден!`,`${fl} — флаги и столицы. Эти страны будут возвращаться в повторениях.`],
-      review:['Повторение пройдено','Пройденное закреплено, можно идти дальше.']}[nd.k];
+      flagsAll:['Флаги закреплены',`${fl}. Дальше столицы этих стран.`],caps:['Столицы выучены',`Столицы стран: ${fl}`],
+      mix:[`${nd.rid?R[nd.rid].name+', уровень '+(nd.lv+1):'Уровень'} пройден!`,`${fl} — флаги и столицы. Эти страны будут возвращаться в повторениях.`],
+      review:['Повторение пройдено','Всё пройденное закреплено, можно идти дальше.']}[nd.k];
     title=T[0]; sub=T[1]; }
-  if(L.kind==='final'){ S.finals[L.rid]=true; title=`${R[L.rid].name} покорена!`; sub='Все страны региона пройдены. Возвращайтесь к испытанию, чтобы не забывать.'; }
+  if(L.kind==='final'){ S.finals[L.rid]=true; title=`Экзамен сдан: ${R[L.rid].name}`; sub='Все страны континента пройдены. Пересдавайте экзамен время от времени, чтобы не забывать.'; }
   if(L.kind==='review'){ title='Повторение пройдено'; S.hearts=Math.min(MAXH,S.hearts+1); sub='+1 сердце за тренировку.'; }
   const streakBefore=streakNow(); award(xp); save(); sWin();
   const streakMsg=S.streak>streakBefore?`Серия: ${S.streak} ${plural(S.streak,'день','дня','дней')} подряд.`:'';
