@@ -95,6 +95,31 @@ main{max-width:620px;margin:0 auto;padding-block:20px 80px;
 :root[data-theme="dark"] .uhead{color:#0C161B}
 
 .route{position:relative;margin:0 auto;width:100%}
+.tabs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin-bottom:-8px;padding:2px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto;border:2px solid var(--line);background:var(--paper);border-radius:12px;padding:8px 12px;display:flex;flex-direction:column;align-items:flex-start;gap:0;line-height:1.2}
+.tab b{font-size:14px}
+.tab small{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tab[aria-selected="true"]{border-color:var(--u);background:var(--u);color:var(--paper)}
+.tab[aria-selected="true"] small{color:inherit;opacity:.85}
+#dueText{color:var(--sea);font-weight:600}
+#dueText:empty{display:none}
+.lvhead{display:flex;align-items:center;gap:10px;margin-top:18px;padding:0 4px;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--u)}
+.lvhead::after{content:"";flex:1;height:2px;background:var(--line);order:3}
+.lvhead em{font-style:normal;text-transform:none;letter-spacing:0;color:var(--good);font-size:13px;order:4}
+.lvhead.locked{color:var(--muted)}
+.lvhead.locked,.lvhead.passed{margin-top:6px;padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
+.lvhead.locked::after,.lvhead.passed::after{display:none}
+.lvhead.passed{cursor:pointer}
+.lvhead.passed em{margin-left:auto}
+.lvhead .again{order:5;text-transform:none;letter-spacing:0;font-size:13px;color:var(--sea)}
+.lvhead.passed:hover{border-color:var(--u)}
+.lvflags{display:flex;gap:4px;font-size:18px;order:2}
+.lvhead>span:first-child{white-space:nowrap}
+.lvhead.passed em{white-space:nowrap}
+@media (max-width:400px){.lvhead.passed em{display:none}}
+.fl.q{background:var(--line);box-shadow:none}
+.node.rev{border-radius:22px}
 .route svg.path{position:absolute;left:50%;top:0;width:1px;overflow:visible;pointer-events:none}
 .route svg.path path{fill:none;stroke:var(--line);stroke-width:4;stroke-dasharray:2 10;stroke-linecap:round}
 .route svg.path path.walked{stroke:var(--u)}
@@ -242,8 +267,8 @@ dialog.mbox::backdrop{background:rgba(5,15,20,.55)}
 
 <main id="home">
   <section class="day" aria-label="Цель дня">
-    <div><h2 id="dayTitle">Цель дня</h2><p id="dayText"></p></div>
-    <button class="btn ghost" id="reviewBtn">Работа над ошибками</button>
+    <div><h2 id="dayTitle">Цель дня</h2><p id="dayText"></p><p id="dueText"></p></div>
+    <button class="btn ghost" id="reviewBtn">Повторить</button>
     <div class="bar"><i id="dayBar"></i></div>
   </section>
   <section class="day sync" id="sync" aria-label="Синхронизация" hidden>
@@ -251,6 +276,7 @@ dialog.mbox::backdrop{background:rgba(5,15,20,.55)}
     <button class="btn" id="syncIn">Войти через Google</button>
     <button class="btn ghost" id="syncOut" hidden>Выйти</button>
   </section>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Континенты"></div>
   <div id="units"></div>
   <details class="ref"><summary>Справочник: все страны и столицы</summary><div id="refList"></div></details>
   <p class="foot">Прогресс хранится в этом браузере. Клавиши 1–4 выбирают ответ, Enter — проверить. Флаги: flag-icons (MIT). <button class="linkbtn" id="resetBtn">Сбросить прогресс</button></p>
@@ -480,21 +506,51 @@ REGIONS.forEach(r=>{
     const [code,name,caps]=line.split('|'); const alts=caps.split('/');
     C[code]={code,name,cap:alts[0],alts,region:r.id,flag:flagOf(code)}; return code;
   });
-  const n=r.codes.length,k=Math.ceil(n/6),base=Math.floor(n/k),rem=n%k; r.lessons=[]; let p=0;
-  for(let i=0;i<k;i++){const s=base+(i<rem?1:0); r.lessons.push(r.codes.slice(p,p+s)); p+=s;}
+  // old 6-country lessons (only to migrate earlier progress)
+  {const n=r.codes.length,k=Math.ceil(n/6),base=Math.floor(n/k),rem=n%k; r.oldLessons=[]; let p=0;
+   for(let i=0;i<k;i++){const s=base+(i<rem?1:0); r.oldLessons.push(r.codes.slice(p,p+s)); p+=s;}}
+  // levels of 3-4 countries; each level = small steps with lots of repetition
+  {const n=r.codes.length,k=Math.ceil(n/4),base=Math.floor(n/k),rem=n%k; r.levels=[]; let p=0;
+   for(let i=0;i<k;i++){const s=base+(i<rem?1:0); r.levels.push(r.codes.slice(p,p+s)); p+=s;}}
+  r.nodes=[];
+  r.levels.forEach((g,lv)=>{
+    const half=Math.ceil(g.length/2), A=g.slice(0,half), B=g.slice(half);
+    r.nodes.push({k:'flagsA',lv,codes:A,title:'Новые флаги'});
+    if(B.length) r.nodes.push({k:'flagsB',lv,codes:B,prev:A,title:'Новые флаги'});
+    r.nodes.push({k:'flagsAll',lv,codes:g,title:'Закрепление флагов'});
+    r.nodes.push({k:'caps',lv,codes:g,title:'Столицы'});
+    r.nodes.push({k:'mix',lv,codes:g,title:'Закрепление'});
+    if(lv%2===1||lv===r.levels.length-1) r.nodes.push({k:'review',lv,codes:r.levels.slice(0,lv+1).flat(),title:'Повторение'});
+  });
+  r.nodes.push({k:'final',lv:r.levels.length,codes:r.codes,title:'Испытание'});
 });
 const R=Object.fromEntries(REGIONS.map(r=>[r.id,r]));
 
 /* ---------- state ---------- */
 const KEY='flags-capitals-v1', MAXH=5, HEART_MS=20*60*1000, GOAL=30;
-const fresh=()=>({epoch:0,ts:0,xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{}});
+const fresh=()=>({epoch:0,ts:0,xp:0,hearts:MAXH,heartTs:Date.now(),streak:0,lastDay:'',dayKey:'',dayXp:0,done:{},finals:{},m:{},seen:{},prog:{},due:{},capSeen:{}});
 let S=fresh();
-try{const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(fresh(),JSON.parse(raw));}catch(e){}
+try{const raw=localStorage.getItem(KEY); if(raw) S=migrate(Object.assign(fresh(),JSON.parse(raw)));}catch(e){}
+function migrate(st){
+  // progress from the old 6-country lessons -> new level path
+  if(!st.migrated2){
+    REGIONS.forEach(r=>{
+      const d=st.done&&st.done[r.id]||0; if(!d) return;
+      const learned=new Set(r.oldLessons.slice(0,d).flat());
+      let lvDone=0; while(lvDone<r.levels.length&&r.levels[lvDone].every(c=>learned.has(c))) lvDone++;
+      const idx=r.nodes.findIndex(n=>n.lv>=lvDone);
+      st.prog[r.id]=Math.max(st.prog[r.id]||0,idx<0?r.nodes.length-1:idx);
+    });
+    for(const c in st.seen) st.capSeen[c]=1; // old intros showed the capital too
+    st.migrated2=1;
+  }
+  return st;
+}
 const save=()=>{S.ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){} window.syncPush&&window.syncPush();};
 /* merge two progress states (local + cloud) without losing anything */
 const dayNum=s=>{if(!s)return 0;const[y,mo,d]=s.split('-').map(Number);return y*10000+mo*100+d;};
 function mergeStates(a,b){
-  a=Object.assign(fresh(),a); b=Object.assign(fresh(),b);
+  a=migrate(Object.assign(fresh(),a)); b=migrate(Object.assign(fresh(),b));
   if((a.epoch||0)!==(b.epoch||0)) return (a.epoch||0)>(b.epoch||0)?a:b;
   const newer=(a.ts||0)>=(b.ts||0)?a:b, m=fresh();
   m.epoch=a.epoch||0; m.ts=Math.max(a.ts||0,b.ts||0);
@@ -505,7 +561,9 @@ function mergeStates(a,b){
   const da=dayNum(a.dayKey), db=dayNum(b.dayKey);
   if(da!==db){const w=da>db?a:b; m.dayKey=w.dayKey; m.dayXp=w.dayXp;} else {m.dayKey=a.dayKey; m.dayXp=Math.max(a.dayXp,b.dayXp);}
   const maxMap=(x,y)=>{const o=Object.assign({},x);for(const k in y)o[k]=Math.max(o[k]||0,y[k]||0);return o;};
-  m.done=maxMap(a.done,b.done); m.m=maxMap(a.m,b.m);
+  m.done=maxMap(a.done,b.done); m.m=maxMap(a.m,b.m); m.prog=maxMap(a.prog,b.prog);
+  m.capSeen=Object.assign({},a.capSeen,b.capSeen); m.migrated2=1;
+  const older=newer===a?b:a; m.due=Object.assign({},older.due,newer.due);
   m.finals=Object.assign({},a.finals,b.finals); m.seen=Object.assign({},a.seen,b.seen);
   return m;
 }
@@ -536,7 +594,15 @@ function distractors(code,n,field){
   return pool;
 }
 const mastery=c=>S.m[c]||0;
-function bump(c,ok){S.m[c]=Math.max(0,Math.min(5,mastery(c)+(ok?1:-1)));}
+const today=()=>{const d=new Date();return Math.floor((d.getTime()-d.getTimezoneOffset()*60000)/864e5);};
+const GAPS=[0,1,2,4,7,15]; // days until the next review, by mastery 0..5
+function bump(c,ok){
+  S.m[c]=ok?Math.min(5,mastery(c)+1):Math.max(0,mastery(c)-2);
+  S.due[c]=today()+(ok?GAPS[S.m[c]]:0);
+}
+const known=c=>!!S.seen[c];
+const typesFor=c=>S.capSeen[c]?['f2c','c2f','c2cap','cap2c']:['f2c','c2f'];
+function dueList(){const t=today();return Object.keys(S.seen).filter(c=>(S.due[c]??0)<=t);}
 
 /* ---------- sound ---------- */
 let AC=null;
@@ -570,39 +636,76 @@ function renderStats(){
 const ICON_CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const ICON_CUP='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z"/></svg>';
 const ICON_LOCK='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V8a3 3 0 0 0-6 0z"/></svg>';
+const ICON_FLAG='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 2h2v20H5zm3 1h11l-2.5 4.5L19 12H8z"/></svg>';
+const ICON_PIN='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7zm0 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+const ICON_STAR='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21l1.4-7L2 9.3l7-.8z"/></svg>';
+const ICON_LOOP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></svg>';
+const NODE_ICON={flagsA:ICON_FLAG,flagsB:ICON_FLAG,flagsAll:ICON_STAR,caps:ICON_PIN,mix:ICON_STAR,review:ICON_LOOP,final:ICON_CUP};
+let TAB=null; try{TAB=localStorage.getItem('fc-tab');}catch(e){}
+function regionProg(r){return Math.min(S.prog[r.id]||0,r.nodes.length);}
+function renderTabs(){
+  if(!R[TAB]) TAB=(REGIONS.find(r=>regionProg(r)>0&&regionProg(r)<r.nodes.length)||REGIONS[0]).id;
+  $('#tabs').innerHTML=REGIONS.map(r=>{const lvDone=r.nodes.slice(0,regionProg(r)).filter(n=>n.k==='mix').length;
+    return `<button role="tab" class="tab" aria-selected="${r.id===TAB}" style="--u:${r.color}" data-id="${r.id}"><b>${r.name}</b><small>${lvDone}/${r.levels.length}</small></button>`;}).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{TAB=b.dataset.id;try{localStorage.setItem('fc-tab',TAB);}catch(e){}renderHome();});
+}
 function renderHome(){
-  renderStats();
+  renderStats(); renderTabs();
+  const due=dueList().length, rb=$('#reviewBtn');
+  rb.textContent=due?`Повторить · ${due}`:'Повторить';
+  $('#dueText').textContent=due?`${due} ${plural(due,'страна ждёт','страны ждут','стран ждут')} повторения`:(Object.keys(S.seen).length?'На сегодня всё повторено':'');
   const host=$('#units'); host.innerHTML='';
-  REGIONS.forEach(r=>{
-    const done=S.done[r.id]||0, L=r.lessons.length, finalDone=!!S.finals[r.id];
-    const unit=document.createElement('section'); unit.className='unit'; unit.style.setProperty('--u',r.color);
-    const prev=r.codes.slice(0,4).map(c=>C[c].flag).join('');
-    unit.innerHTML=`<div class="uhead"><div class="t"><small>${r.codes.length} ${plural(r.codes.length,'страна','страны','стран')}</small><h3>${r.name}</h3>
-      <div class="meta">${finalDone?'Испытание пройдено':`Урок ${Math.min(done+1,L)} из ${L}`}</div></div><div class="flags">${prev}</div></div>`;
-    const N=L+1, GAP=96, TOP=78, H=TOP+(N-1)*GAP+56;
-    const route=document.createElement('div'); route.className='route'; route.style.height=H+'px';
-    const pts=[]; for(let i=0;i<N;i++) pts.push([Math.round(Math.sin(i*1.15)*78), TOP+i*GAP]);
-    const seg=(a,b)=>`C ${a[0]} ${a[1]+GAP/2} ${b[0]} ${b[1]-GAP/2} ${b[0]} ${b[1]}`;
-    let d=`M ${pts[0][0]} ${pts[0][1]}`, dw=d; const walkedTo=Math.min(done,N-1);
-    for(let i=1;i<N;i++){d+=' '+seg(pts[i-1],pts[i]); if(i<=walkedTo) dw+=' '+seg(pts[i-1],pts[i]);}
-    route.innerHTML=`<svg class="path" height="${H}" aria-hidden="true"><path d="${d}"/>${walkedTo>0?`<path class="walked" d="${dw}"/>`:''}</svg>`;
-    for(let i=0;i<N;i++){
-      const isFinal=i===L, b=document.createElement('button');
-      const unlocked=isFinal?done>=L:i<=done, isDone=isFinal?finalDone:i<done, current=unlocked&&!isDone;
-      b.className='node'+(isFinal?' final':'')+(unlocked?'':' locked')+(isDone?' done':'')+(current?' current':'');
-      b.style.left=`calc(50% + ${pts[i][0]}px)`; b.style.top=pts[i][1]+'px';
-      b.innerHTML=!unlocked?ICON_LOCK:isFinal?ICON_CUP:isDone?ICON_CHECK:(i+1);
-      const names=isFinal?'Испытание по всем странам':r.lessons[i].map(c=>C[c].name).join(', ');
-      b.setAttribute('aria-label',`${isFinal?'Испытание':'Урок '+(i+1)}: ${names}${unlocked?'':' (закрыт)'}`);
-      b.title=names;
-      b.onclick=()=>{ if(!unlocked){toast('Сначала пройдите предыдущий урок');return;} isFinal?startFinal(r.id):startLesson(r.id,i); };
-      route.appendChild(b);
-      if(current){const t=document.createElement('div');t.className='tag';t.style.left=b.style.left;t.style.top=pts[i][1]+'px';
-        t.textContent=isFinal?'Испытание':(done===0&&i===0?'Начать':'Дальше');route.appendChild(t);}
+  const r=R[TAB], prog=regionProg(r), N=r.nodes.length, finalDone=!!S.finals[r.id];
+  const lvNow=Math.min(r.levels.length, (r.nodes[Math.min(prog,N-1)]||{}).lv+1);
+  const unit=document.createElement('section'); unit.className='unit'; unit.style.setProperty('--u',r.color);
+  unit.innerHTML=`<div class="uhead"><div class="t"><small>${r.codes.length} ${plural(r.codes.length,'страна','страны','стран')} · ${r.levels.length} ${plural(r.levels.length,'уровень','уровня','уровней')}</small><h3>${r.name}</h3>
+    <div class="meta">${finalDone?'Испытание пройдено':prog>=N-1?'Осталось испытание':`Уровень ${lvNow} из ${r.levels.length}`}</div></div></div>`;
+  const GAP=92, TOP=70;
+  let gi=0; // global node index for the winding offset
+  const groups=[]; r.levels.forEach((g,lv)=>groups.push({lv,nodes:r.nodes.map((n,i)=>({n,i})).filter(o=>o.n.lv===lv)}));
+  groups.push({lv:r.levels.length,nodes:[{n:r.nodes[N-1],i:N-1}]});
+  groups.forEach(G=>{
+    const isFinalG=G.lv===r.levels.length, first=G.nodes[0].i, last=G.nodes[G.nodes.length-1].i;
+    const open=prog>=first, doneAll=prog>last;
+    const head=document.createElement('div'); head.className='lvhead'+(open?'':' locked');
+    const codes=isFinalG?[]:r.levels[G.lv];
+    head.innerHTML=isFinalG?`<span>Испытание: все страны континента</span>`:
+      `<span>Уровень ${G.lv+1}</span><span class="lvflags">${open?codes.map(c=>C[c].flag).join(''):codes.map(()=>'<i class="fl q"></i>').join('')}</span>${doneAll?'<em>пройден</em>':''}`;
+    if(isFinalG&&finalDone) head.innerHTML='<span>Испытание</span><em>пройдено</em>';
+    unit.appendChild(head);
+    const isCur=open&&!doneAll&&!(isFinalG&&finalDone);
+    if(!isCur){
+      if(doneAll||(isFinalG&&finalDone)){ // finished level: compact row, tap to practise it again
+        const ni=isFinalG?N-1:G.nodes.find(o=>o.n.k==='mix').i;
+        head.classList.add('passed'); head.tabIndex=0; head.setAttribute('role','button');
+        head.insertAdjacentHTML('beforeend','<b class="again">Повторить</b>');
+        head.onclick=()=>startNode(r.id,ni); head.onkeydown=e=>{if(e.key==='Enter')startNode(r.id,ni);};
+      }
+      return;
     }
-    unit.appendChild(route); host.appendChild(unit);
+    const n=G.nodes.length, H=TOP+(n-1)*GAP+50;
+    const route=document.createElement('div'); route.className='route'; route.style.height=H+'px';
+    const pts=G.nodes.map((o,k)=>[Math.round(Math.sin((gi+k)*1.15)*78),TOP-24+k*GAP]);
+    const seg=(a,b)=>`C ${a[0]} ${a[1]+GAP/2} ${b[0]} ${b[1]-GAP/2} ${b[0]} ${b[1]}`;
+    let d=`M ${pts[0][0]} ${pts[0][1]}`, dw=d, walked=0;
+    for(let k=1;k<n;k++){d+=' '+seg(pts[k-1],pts[k]); if(G.nodes[k].i<=prog){dw+=' '+seg(pts[k-1],pts[k]);walked++;}}
+    route.innerHTML=`<svg class="path" height="${H}" aria-hidden="true"><path d="${d}"/>${walked?`<path class="walked" d="${dw}"/>`:''}</svg>`;
+    G.nodes.forEach((o,k)=>{
+      const nd=o.n, i=o.i, isFinal=nd.k==='final';
+      const unlocked=i<=prog, isDone=isFinal?finalDone:i<prog, current=unlocked&&!isDone;
+      const b=document.createElement('button');
+      b.className='node'+(isFinal?' final':'')+(nd.k==='review'?' rev':'')+(unlocked?'':' locked')+(isDone?' done':'')+(current?' current':'');
+      b.style.left=`calc(50% + ${pts[k][0]}px)`; b.style.top=pts[k][1]+'px';
+      b.innerHTML=!unlocked?ICON_LOCK:isDone?ICON_CHECK:NODE_ICON[nd.k];
+      const what=isFinal?'все страны':nd.k==='review'?'всё пройденное':nd.codes.map(c=>C[c].name).join(', ');
+      b.setAttribute('aria-label',`${nd.title}: ${unlocked?what:'закрыто'}`); b.title=`${nd.title}${unlocked?': '+what:''}`;
+      b.onclick=()=>{ if(!unlocked){toast('Сначала пройдите предыдущие шаги');return;} startNode(r.id,i); };
+      route.appendChild(b);
+      if(current){const t=document.createElement('div');t.className='tag';t.style.left=b.style.left;t.style.top=pts[k][1]+'px';t.textContent=nd.title;route.appendChild(t);}
+    });
+    gi+=n; unit.appendChild(route);
   });
-  host.style.display='flex';host.style.flexDirection='column';host.style.gap='26px';
+  host.appendChild(unit);
   // reference
   $('#refList').innerHTML=REGIONS.map(r=>`<h4>${r.name}</h4><ul>${r.codes.map(c=>{const x=C[c],m=mastery(c);
     return `<li><span class="flag">${x.flag}</span><div class="txt"><span class="n">${esc(x.name)}</span><br><span class="c">${esc(x.cap)}</span></div><div class="dots" title="Освоение: ${m} из 5">${[0,1,2,3,4].map(k=>`<i class="${k<m?'on':''}"></i>`).join('')}</div></li>`}).join('')}</ul>`).join('');
@@ -629,38 +732,83 @@ function toast(msg,ms=2600){
 }
 function noHearts(){
   refill(); const mins=Math.ceil((HEART_MS-(Date.now()-S.heartTs))/60000);
-  modal(`<div style="font-size:44px">💔</div><h3>Сердца закончились</h3><p>Новое сердце появится через ${mins} мин. Работа над ошибками не тратит сердца и возвращает одно за прохождение.</p>`,
-    [['Работа над ошибками','',startReview],['На карту','ghost',null]]);
+  modal(`<div style="font-size:44px">💔</div><h3>Сердца закончились</h3><p>Новое сердце появится через ${mins} мин. Повторение не тратит сердца и возвращает одно за прохождение.</p>`,
+    [['Повторить','',startReview],['На карту','ghost',null]]);
 }
 
 /* ---------- lesson building ---------- */
 const QTYPES=['f2c','c2f','c2cap','cap2c'];
-function buildLesson(rid,i){
-  const r=R[rid], neu=r.lessons[i], earlier=r.lessons.slice(0,i).flat(), steps=[];
-  neu.forEach(c=>{ if(!S.seen[c]) steps.push({t:'intro',c}); steps.push({t:pick(['f2c','c2f']),c}); });
-  const mix=[];
-  shuffle(neu).forEach(c=>mix.push({t:pick(['c2cap','cap2c']),c}));
-  shuffle(earlier).slice(0,3).forEach(c=>mix.push({t:pick(QTYPES),c}));
-  const steps2=shuffle(mix);
-  const mset=shuffle(neu.concat(shuffle(earlier).slice(0,2))).slice(0,4);
-  if(mset.length>=3) steps2.splice(Math.floor(steps2.length/2),0,{t:'match',mode:pick(['flag','cap']),codes:mset});
-  shuffle(neu).slice(0,2).forEach(c=>steps2.push({t:'type',c}));
-  return steps.concat(steps2);
+// shuffle but avoid the same country twice in a row where possible
+function spread(steps){
+  const a=shuffle(steps);
+  for(let i=1;i<a.length;i++) if(a[i].c&&a[i].c===a[i-1].c){
+    const j=a.findIndex((x,k)=>k>i&&x.c!==a[i].c&&(!a[k-1]||a[k-1].c!==a[i-1].c)); if(j>0)[a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
 }
-function quizSteps(codes,n,withType){
-  const out=[]; const cs=shuffle(codes).slice(0,n);
-  cs.forEach((c,k)=>out.push({t:withType&&k%4===3?'type':pick(QTYPES),c}));
-  if(cs.length>=4) out.splice(Math.floor(out.length/2),0,{t:'match',mode:pick(['flag','cap']),codes:shuffle(cs).slice(0,4)});
+const flagQ=c=>({t:pick(['f2c','c2f']),c});
+const anyQ=c=>({t:pick(typesFor(c)),c});
+// countries from earlier levels to mix in: due first, then weakest
+function earlierPick(r,lv,n){
+  const t=today(); const pool=r.levels.slice(0,lv).flat().filter(known);
+  return pool.sort((a,b)=>((S.due[a]??0)<=t?0:1)-((S.due[b]??0)<=t?0:1)||mastery(a)-mastery(b)||Math.random()-.5).slice(0,n);
+}
+function buildNode(r,nd){
+  const steps=[], g=nd.codes;
+  const introFlag=c=>steps.push({t:'intro',c,nocap:!S.capSeen[c]});
+  if(nd.k==='flagsA'||nd.k==='flagsB'){
+    g.forEach(c=>{introFlag(c); steps.push({t:'f2c',c});});
+    const rest=[];
+    g.forEach(c=>{rest.push({t:'c2f',c},{t:'f2c',c},{t:'c2f',c});});
+    (nd.prev||[]).forEach(c=>rest.push(flagQ(c),flagQ(c)));
+    earlierPick(r,nd.lv,2).forEach(c=>rest.push(anyQ(c)));
+    const out=spread(rest);
+    const mset=g.concat(nd.prev||[],earlierPick(r,nd.lv,4)).slice(0,4);
+    if(mset.length>=3) out.splice(Math.floor(out.length*0.6),0,{t:'match',mode:'flag',codes:mset});
+    return steps.concat(out);
+  }
+  if(nd.k==='flagsAll'){
+    const rest=[]; g.forEach(c=>rest.push({t:'f2c',c},{t:'c2f',c},flagQ(c)));
+    earlierPick(r,nd.lv,2).forEach(c=>rest.push(anyQ(c)));
+    const out=spread(rest); out.splice(Math.floor(out.length/2),0,{t:'match',mode:'flag',codes:shuffle(g).slice(0,4)});
+    return out;
+  }
+  if(nd.k==='caps'){
+    g.forEach(c=>{steps.push({t:'introcap',c},{t:'c2cap',c});});
+    const rest=[]; g.forEach(c=>rest.push({t:'cap2c',c},{t:'c2cap',c}));
+    const out=spread(rest); out.splice(Math.floor(out.length/2),0,{t:'match',mode:'cap',codes:shuffle(g).slice(0,4)});
+    return steps.concat(out);
+  }
+  if(nd.k==='mix'){
+    const rest=[]; g.forEach(c=>rest.push({t:pick(['f2c','c2f']),c},{t:pick(['c2cap','cap2c']),c}));
+    const ear=earlierPick(r,nd.lv,4); ear.forEach(c=>rest.push(anyQ(c)));
+    const out=spread(rest);
+    const mset=shuffle(g).slice(0,Math.min(4,g.length));
+    if(mset.length>=3) out.splice(Math.floor(out.length/2),0,{t:'match',mode:pick(['flag','cap']),codes:mset});
+    shuffle(g).slice(0,2).forEach(c=>out.push({t:'type',c}));
+    return out;
+  }
+  // review over everything learned so far / final test
+  return reviewSteps(nd.codes.filter(known), nd.k==='final'?15:12);
+}
+function reviewSteps(pool,n){
+  const t=today();
+  const cs=pool.slice().sort((a,b)=>((S.due[a]??0)<=t?0:1)-((S.due[b]??0)<=t?0:1)||mastery(a)-mastery(b)||Math.random()-.5).slice(0,n);
+  const out=spread(cs.map((c,k)=>S.capSeen[c]&&k%4===3?{t:'type',c}:anyQ(c)));
+  const mcap=cs.filter(c=>S.capSeen[c]);
+  if(cs.length>=4) out.splice(Math.floor(out.length/2),0,mcap.length>=4&&Math.random()<.5?{t:'match',mode:'cap',codes:shuffle(mcap).slice(0,4)}:{t:'match',mode:'flag',codes:shuffle(cs).slice(0,4)});
   return out;
 }
 function canPlay(){refill(); if(S.hearts<=0){noHearts();return false;} return true;}
-function startLesson(rid,i){ if(!canPlay())return; run({kind:'lesson',rid,i,steps:buildLesson(rid,i)}); }
-function startFinal(rid){ if(!canPlay())return; run({kind:'final',rid,steps:quizSteps(R[rid].codes,14,true)}); }
+function startNode(rid,i){
+  if(!canPlay())return; const r=R[rid], nd=r.nodes[i];
+  run({kind:nd.k==='final'?'final':'lesson',rid,ni:i,node:nd,steps:buildNode(r,nd)});
+}
 function startReview(){
-  let pool=Object.keys(S.seen);
-  if(pool.length<4){ pool=R.eu.lessons[0].slice(); }
-  pool.sort((a,b)=>mastery(a)-mastery(b)||Math.random()-.5);
-  run({kind:'review',steps:quizSteps(pool.slice(0,12),10,true)});
+  let pool=dueList();
+  if(pool.length<6) pool=pool.concat(Object.keys(S.seen).filter(c=>!pool.includes(c)).sort((a,b)=>mastery(a)-mastery(b)).slice(0,6-pool.length));
+  if(pool.length<2){ toast('Сначала пройдите первый урок: повторять пока нечего'); return; }
+  run({kind:'review',steps:reviewSteps(pool,12)});
 }
 
 /* ---------- lesson runtime ---------- */
@@ -684,9 +832,13 @@ function nextStep(){
   const s=L.cur, body=$('#lbody'), x=s.c?C[s.c]:null;
   const combo=L.combo>=3?`${L.combo} подряд без ошибок`:'';
   let h=`<div class="combo">${combo}</div>`;
-  if(s.t==='intro'){
-    S.seen[s.c]=1; save();
-    h+=`<div class="intro"><span class="badge">Новая страна</span><div class="bigflag flag">${x.flag}</div><h2>${esc(x.name)}</h2><p>Столица — <b>${esc(x.cap)}</b></p></div>`;
+  if(s.t==='intro'||s.t==='introcap'){
+    const capCard=s.t==='introcap';
+    S.seen[s.c]=1; if(capCard) S.capSeen[s.c]=1;
+    if(S.due[s.c]==null) S.due[s.c]=today(); save();
+    h+=capCard
+      ?`<div class="intro"><span class="badge">Новая столица</span><div class="bigflag flag">${x.flag}</div><p>Столица страны ${esc(x.name)}</p><h2>${esc(x.cap)}</h2></div>`
+      :`<div class="intro"><span class="badge">Новый флаг</span><div class="bigflag flag">${x.flag}</div><h2>${esc(x.name)}</h2>${s.nocap?'<p>Столицу выучим чуть позже</p>':`<p>Столица — <b>${esc(x.cap)}</b></p>`}</div>`;
     body.innerHTML=h; foot('', '', 'Запомнил', true); L.phase='intro'; $('#act').focus(); return;
   }
   if(s.t==='match') return renderMatch(h);
@@ -714,7 +866,7 @@ function choose(k){
   L.sel=k; document.querySelectorAll('.opt').forEach((b,i)=>b.classList.toggle('sel',i===k));
   $('#act').disabled=false;
 }
-function factLine(c){const x=C[c];return `<span><span class="flag">${x.flag}</span> ${esc(x.name)} — столица ${esc(x.cap)}</span>`;}
+function factLine(c){const x=C[c];return `<span><span class="flag">${x.flag}</span> ${esc(x.name)}${S.capSeen[c]?' — столица '+esc(x.cap):''}</span>`;}
 function verdict(ok,c,extra=''){
   L.answers++;
   if(ok){ L.combo++; L.progress++; sGood(); foot('good',`<b>${pick(['Верно!','Точно!','Отлично!','Так держать!'])}</b>${extra||factLine(c)}`,'Далее'); }
@@ -787,10 +939,15 @@ function finish(){
   const secs=Math.round((Date.now()-L.start)/1000), acc=L.answers?Math.round((L.answers-L.mistakes)/L.answers*100):100;
   let xp=L.kind==='final'?25:L.kind==='review'?10:10; if(L.mistakes===0&&L.kind!=='review') xp+=5;
   let title='Урок пройден!', sub='';
-  if(L.kind==='lesson'){ const r=R[L.rid]; if((S.done[L.rid]||0)===L.i) S.done[L.rid]=L.i+1;
-    sub=`Вы освоили: ${r.lessons[L.i].map(c=>C[c].flag).join(' ')}`; }
+  if(L.kind==='lesson'||L.kind==='final'){ if((S.prog[L.rid]||0)===L.ni) S.prog[L.rid]=L.ni+1; }
+  if(L.kind==='lesson'){ const nd=L.node, fl=nd.codes.map(c=>C[c].flag).join(' ');
+    const T={flagsA:['Новые флаги выучены',`Теперь вы знаете: ${fl}`],flagsB:['Новые флаги выучены',`Теперь вы знаете: ${fl}`],
+      flagsAll:['Флаги закреплены',`Уровень ${nd.lv+1}: ${fl}. Дальше столицы.`],caps:['Столицы выучены',`Столицы стран: ${fl}`],
+      mix:[`Уровень ${nd.lv+1} пройден!`,`${fl} — флаги и столицы. Эти страны будут возвращаться в повторениях.`],
+      review:['Повторение пройдено','Пройденное закреплено, можно идти дальше.']}[nd.k];
+    title=T[0]; sub=T[1]; }
   if(L.kind==='final'){ S.finals[L.rid]=true; title=`${R[L.rid].name} покорена!`; sub='Все страны региона пройдены. Возвращайтесь к испытанию, чтобы не забывать.'; }
-  if(L.kind==='review'){ title='Ошибки исправлены'; S.hearts=Math.min(MAXH,S.hearts+1); sub='+1 сердце за тренировку.'; }
+  if(L.kind==='review'){ title='Повторение пройдено'; S.hearts=Math.min(MAXH,S.hearts+1); sub='+1 сердце за тренировку.'; }
   const streakBefore=streakNow(); award(xp); save(); sWin();
   const streakMsg=S.streak>streakBefore?`Серия: ${S.streak} ${plural(S.streak,'день','дня','дней')} подряд.`:'';
   $('#lbody').innerHTML=`<div class="done"><div class="stamp">${L.kind==='final'?'🏆':L.mistakes===0?'🌍':'🧭'}</div><h2>${title}</h2>
@@ -800,7 +957,7 @@ function finish(){
   $('#prog').style.width='100%'; foot('','', 'Продолжить'); L.phase='end';
 }
 function failLesson(){
-  $('#lbody').innerHTML=`<div class="done"><div class="stamp">💔</div><h2>Сердца закончились</h2><p>Урок не засчитан. Сердце восстанавливается каждые 20 минут, а работа над ошибками возвращает одно сразу.</p></div>`;
+  $('#lbody').innerHTML=`<div class="done"><div class="stamp">💔</div><h2>Сердца закончились</h2><p>Урок не засчитан. Сердце восстанавливается каждые 20 минут, а повторение возвращает одно сразу.</p></div>`;
   foot('bad','','На карту'); L.phase='end';
 }
 $('#act').onclick=()=>{ if(L&&L.phase==='end') return closeLesson(); act(); };
