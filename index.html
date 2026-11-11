@@ -205,6 +205,10 @@ details.ref summary{cursor:pointer;padding:12px 0;font-family:var(--display);fon
 .mt{background:var(--paper);border:2px solid var(--line);border-radius:14px;box-shadow:0 3px 0 var(--line);padding:12px 10px;font-weight:600;font-size:15px;min-height:58px;display:grid;place-items:center;text-align:center;overflow-wrap:anywhere}
 .mt{min-width:0}
 .match.flags .mt{min-height:84px}
+.match.three{grid-template-columns:1fr 1fr .8fr;gap:8px}
+.match.three .mt{font-size:14px;padding:10px 6px;min-height:64px;overflow-wrap:break-word;hyphens:auto}
+.match.three .mt .flag{font-size:38px}
+.mh{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-align:center;margin-bottom:-2px}
 .mt .flag{font-size:56px}
 @media (max-width:420px){.mt .flag{font-size:46px}.match.flags .mt{min-height:72px}}
 .mt.sel{border-color:var(--sea);box-shadow:0 3px 0 var(--sea);background:color-mix(in srgb,var(--sea) 10%,var(--paper))}
@@ -936,30 +940,34 @@ function act(){
 }
 function renderMatch(h){
   const s=L.cur, cap=s.mode==='cap';
-  h+=`<p class="q">${cap?'Соедините страны и столицы':'Соедините флаги и страны'}</p>`;
-  const left=shuffle(s.codes), right=shuffle(s.codes);
-  const lt=c=>`<button class="mt" data-side="l" data-c="${c}">${cap?esc(C[c].name):`<span class="flag">${C[c].flag}</span>`}</button>`;
-  const rt=c=>`<button class="mt" data-side="r" data-c="${c}">${cap?esc(C[c].cap):esc(C[c].name)}</button>`;
-  h+=`<div class="match${cap?'':' flags'}">${left.map((c,k)=>lt(c)+rt(right[k])).join('')}</div>`;
-  $('#lbody').innerHTML=h; foot('','<span style="color:var(--muted)">Выберите пару: сначала слева, потом справа</span>','Проверить',false);
-  L.phase='match'; let selL=null, selR=null, left2=s.codes.length, errs=0;
-  const tiles=[...document.querySelectorAll('.mt')];
-  const tryPair=()=>{
-    if(!selL||!selR) return;
-    const a=selL,b=selR; selL=selR=null;
-    if(a.dataset.c===b.dataset.c){
-      [a,b].forEach(t=>{t.classList.remove('sel');t.classList.add('ok');t.disabled=true;}); tone([[740,.1]]); left2--;
-      if(left2===0){ L.answers++; L.progress++; if(errs===0)L.combo++; else L.combo=0; s.codes.forEach(c=>bump(c,true)); save();
-        sGood(); foot('good',`<b>${errs?'Готово':'Безупречно!'}</b><span>${errs?'Ошибок в парах: '+errs:'Все пары с первого раза'}</span>`,'Далее'); L.phase='feedback'; setProg(); $('#act').focus(); }
+  // columns to connect: country + capital + flag, or flag + country
+  const cols=cap?[['name','Страна'],['cap','Столица'],['flag','Флаг']]:[['flag','Флаг'],['name','Страна']];
+  const NC=cols.length;
+  h+=`<p class="q">${cap?'Соедините страну, столицу и флаг':'Соедините флаги и страны'}</p>`;
+  const order=cols.map(()=>shuffle(s.codes));
+  const tile=(ci,c)=>{const f=cols[ci][0];return `<button class="mt" data-col="${ci}" data-c="${c}">${f==='flag'?`<span class="flag">${C[c].flag}</span>`:esc(C[c][f])}</button>`;};
+  let g=cap?cols.map(c=>`<div class="mh">${c[1]}</div>`).join(''):'';
+  s.codes.forEach((_,k)=>{for(let ci=0;ci<NC;ci++) g+=tile(ci,order[ci][k]);});
+  h+=`<div class="match${cap?' three':' flags'}">${g}</div>`;
+  $('#lbody').innerHTML=h;
+  foot('',`<span style="color:var(--muted)">${cap?'Выберите по одной карточке в каждой колонке':'Выберите пару: флаг и страну'}</span>`,'Проверить',false);
+  L.phase='match'; const sel=new Array(NC).fill(null); let left=s.codes.length, errs=0;
+  const tryGroup=()=>{
+    if(sel.some(x=>!x)) return;
+    const grp=sel.slice(); sel.fill(null);
+    if(grp.every(t=>t.dataset.c===grp[0].dataset.c)){
+      grp.forEach(t=>{t.classList.remove('sel');t.classList.add('ok');t.disabled=true;}); tone([[740,.1]]); left--;
+      if(left===0){ L.answers++; L.progress++; if(errs===0)L.combo++; else L.combo=0; s.codes.forEach(c=>bump(c,true)); save();
+        sGood(); foot('good',`<b>${errs?'Готово':'Безупречно!'}</b><span>${errs?'Ошибок: '+errs:'Всё с первого раза'}</span>`,'Далее'); L.phase='feedback'; setProg(); $('#act').focus(); }
     }else{
-      errs++; L.mistakes++; bump(a.dataset.c,false); sBad();
-      [a,b].forEach(t=>{t.classList.remove('sel');t.classList.add('err');setTimeout(()=>t.classList.remove('err'),400);});
+      errs++; L.mistakes++; bump(grp[0].dataset.c,false); sBad();
+      grp.forEach(t=>{t.classList.remove('sel');t.classList.add('err');setTimeout(()=>t.classList.remove('err'),400);});
     }
   };
-  tiles.forEach(t=>t.onclick=()=>{
-    if(t.disabled) return;
-    if(t.dataset.side==='l'){ selL&&selL.classList.remove('sel'); selL=t; } else { selR&&selR.classList.remove('sel'); selR=t; }
-    t.classList.add('sel'); tryPair();
+  document.querySelectorAll('.mt').forEach(t=>t.onclick=()=>{
+    if(t.disabled) return; const ci=+t.dataset.col;
+    if(sel[ci]===t){t.classList.remove('sel');sel[ci]=null;return;}
+    sel[ci]&&sel[ci].classList.remove('sel'); sel[ci]=t; t.classList.add('sel'); tryGroup();
   });
 }
 function closeLesson(){ scrollToCurrent=true; L=null; $('#lesson').hidden=true; document.body.style.overflow=''; renderHome(); }
