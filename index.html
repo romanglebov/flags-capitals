@@ -205,7 +205,7 @@ details.ref summary{cursor:pointer;padding:12px 0;font-family:var(--display);fon
 .mt{background:var(--paper);border:2px solid var(--line);border-radius:14px;box-shadow:0 3px 0 var(--line);padding:12px 10px;font-weight:600;font-size:15px;min-height:58px;display:grid;place-items:center;text-align:center;overflow-wrap:anywhere}
 .mt{min-width:0}
 .match.flags .mt{min-height:84px}
-.match.three{grid-template-columns:1fr 1fr .8fr;gap:8px}
+.match.three{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .match.three .mt{font-size:14px;padding:10px 6px;min-height:64px;overflow-wrap:break-word;hyphens:auto}
 .match.three .mt .flag{font-size:38px}
 .mh{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-align:center;margin-bottom:-2px}
